@@ -7,11 +7,42 @@ class Model:
 
     Model of the MVC architecture. Initiate model objects here.
     """
-    def __init__(self, width: int, height: int):
-        self.boids = Boids(dims=2, num_boids=200, 
-                           environ_bounds=[width, height],
-                           max_velocity=5, max_acceleration=2,
-                           perceptual_range=200)
+    def __init__(self, environ_bounds: List[int]):
+        self.boids = Boids(dims=3, num_boids=200, 
+                           environ_bounds=environ_bounds,
+                           max_velocity=2, max_acceleration=1,
+                           perceptual_range=100)
+        self.center = np.asarray(environ_bounds)//2
+        self.cube = Cube(self.center, size=max(environ_bounds))
+
+    def get_center(self) -> np.ndarray:
+        return self.center
+
+class Cube:
+    """Creates Reference Cube in the 3d simulated environment
+    """
+    RELATIVE_POS = np.asarray(
+        [[-1, -1, -1],
+         [ 1, -1, -1],
+         [ 1,  1, -1],
+         [-1,  1, -1],
+         [-1, -1,  1],
+         [ 1, -1,  1],
+         [ 1,  1,  1],
+         [-1,  1,  1]])
+
+    def __init__(self, center: Tuple[int, int, int]=(0, 0, 0),
+                 size: int=1) -> None:
+        self.center = np.asarray(center)
+        self.size = size
+        self.vertices = self._make_vertices()
+
+    def get_vertices(self):
+        return self.vertices
+
+    def _make_vertices(self) -> np.ndarray:
+        """Returns all points in a cube as a matrix"""
+        return self.center + 0.5*self.size*Cube.RELATIVE_POS 
 
 class View:
     """Defines the view of the annimation
@@ -31,9 +62,11 @@ class View:
         self.model = model
         self.drawables: List[View.DrawableInterface] = []
         self._create_drawables()
+        self.rotate3d = Rotate3D(self.model.get_center())
 
     def _create_drawables(self):
-        self.drawables.append(View.Draw_boids(self.model.boids))
+        self.drawables.append(View.DrawBoids(self.model.boids),
+                              View.DrawCube(self.model.cube))
 
     def redraw_all(self):
         """Clear view and redraw all view objects
@@ -68,16 +101,21 @@ class View:
             """
             raise NotImplementedError
 
-    class Draw_boids(DrawableInterface):
+    class DrawBoids(DrawableInterface):
+        """Draws the boid in the gui
+        """
         def __init__(self, boids: Boids):
             self.boids = boids
 
         def draw(self, canvas: tkinter.Canvas):
+            self. draw_circle_boids(canvas)
+
+        def draw_circle_boids(self, canvas: tkinter.Canvas):
             size = 40
             length = 4
             color = 'yellow'
-            locations = self.boids.get_locations()
-            velocities = self.boids.get_velocities()
+            locations = self.boids.get_locations()[:, :2]
+            velocities = self.boids.get_velocities()[:, :2]
             for loc, vel in zip(locations, velocities):
                 x0, y0 = tuple(loc)
                 x1, y1 = tuple(loc + vel * length)
@@ -85,7 +123,65 @@ class View:
                 x3, y3 = tuple(loc + size // 2)
                 canvas.create_oval(x2, y2, x3, y3, fill=color)
                 canvas.create_line(x0, y0, x1, y1)
+    
+    class DrawCube:
+        """Draws the cube in the gui 
+        """
+        def __init__(self, cube: Cube):
+            self.cube = cube
 
+        def draw(self, canvas):
+            width = 1
+            color = "white"
+            verts = self.data.get_vertices()
+            n = len(verts)//2
+            for i in range(n):
+                x1, y1 = tuple(verts[i][:-1])
+                x2, y2 = tuple(verts[(i+1) % n][:-1])
+                x3, y3 = tuple(verts[i+n][:-1])
+                x4, y4 = tuple(verts[(i+1) % n + n][:-1])
+                for points in ((x1, y1, x2, y2),
+                               (x3, y3, x4, y4),
+                               (x1, y1, x3, y3)):
+                    canvas.create_line(*points, width=width, fill=color)
+
+    class Rotate3D:
+        """Performs 3D rotation of gui objects
+        """
+        def __init__(self, center: np.ndarray):
+            self.theta = 0
+            self.center = center
+            self.axis = 0
+
+        def rotate_3D_points(self, vertices: np.ndarray) -> np.ndarray:
+            """Rotates a matrix of points around self.center 
+            along a given axis by self.theta degree"""
+            rotmats = [View.Rotate3D._rotmat_yz,
+                       View.Rotate3D._rotmat_xz,
+                       View.Rotate3D._rotmat_xy]
+            vertices -= self.center
+            a = math.radians(self.theta)
+            rotmat = rotmats[self.axis](self, math.sin(a), math.cos(a))
+            vertices = np.dot(vertices, rotmat)
+            vertices += self.center
+        
+        def _rotmat_xy(self, sin: float, cos: float) -> np.ndarray:
+            return np.asarray(
+                [[ cos, sin, 0],
+                 [-sin, cos, 0],
+                 [   0,   0, 1]])
+        
+        def _rotmat_xz(self, sin: float, cos: float) -> np.ndarray:
+            return np.asarray(
+                [[cos, 0, -sin],
+                 [  0, 1,    0],
+                 [sin, 0,  cos]])
+
+        def _rotmat_yz(self, sin: float, cos: float) -> np.ndarray:
+            return np.asarray(
+                [[1,    0,   0],
+                 [0,  cos, sin],
+                 [0, -sin, cos]])
 
 class Controller:
     """Defines the controller of the annimation.

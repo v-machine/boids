@@ -16,7 +16,7 @@ version: 0.1.0
 
 EPSILON = 10**-8  # prevents divison by zero
 
-class Boids():
+class Boids:
     """Defines a collections of boids to be simulated.
 
     The class Boids follows the behavioral rules as specified in 
@@ -72,9 +72,9 @@ class Boids():
         self.state = self._init_boids_state()
         self.loc_diff = None
         self.distance = self._compute_distance()
-        self.rules = {Boids.align: 0.2,
-                      Boids.separate: 0.3,
-                      Boids.cohere: 0.5}
+        self.rules = {Boids.align: 0.0,
+                      Boids.separate: 1.0,
+                      Boids.cohere: 0.0}
 
     def _init_boids_state(self) -> np.ndarray:
         """Initializes the state of the boids as a tensor.
