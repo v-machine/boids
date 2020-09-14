@@ -31,7 +31,7 @@ class Boids:
             The number of dimension of the simulation.
         num_boids: int
             The number of boids to be simulated.
-        env_bounds: List[int]
+        env_dims: List[int]
             The size in each dimension of the simulated environment.
         max_vel: float
             The maximum velocity for all boids.
@@ -58,23 +58,25 @@ class Boids:
         VEL = 1
         ACC = 2
 
-    def __init__(self, dims: int, num_boids: int,
+    def __init__(self, num_boids: int,
                  environ_bounds: List[int],
                  max_velocity: float,
                  max_acceleration: float,
-                 perceptual_range: int):
-        self.dims = dims
+                 perceptual_range: int,
+                 origin: List[int]=None):
         self.num_boids = num_boids
-        self.env_bounds = environ_bounds
+        self.env_dims = np.asarray(environ_bounds)
         self.max_vel = max_velocity
         self.max_acc = max_acceleration
         self.p_range = perceptual_range
-        self.state = self._init_boids_state()
         self.loc_diff = None
-        self.distance = self._compute_distance()
         self.rules = {Boids.align: 0.0,
                       Boids.separate: 1.0,
                       Boids.cohere: 0.0}
+        self.origin = (self.env_dims//2 if origin is None 
+                       else np.asarray(origin))
+        self.state = self._init_boids_state()
+        self.distance = self._compute_distance()
 
     def _init_boids_state(self) -> np.ndarray:
         """Initializes the state of the boids as a tensor.
@@ -90,14 +92,17 @@ class Boids:
         Notes:
             The default initial state is randomized with the bounded range of
             each attributes. For instance, a random location (x1, x2...) bounded
-            by the size of the simulation environment (env_bounds).
+            by the size of the simulation environment (env_dims).
         """
-        dims, n_boids, n_attrs = self.dims, self.num_boids, len(Boids.Attr)
+        dims, n_boids, n_attrs = (self.env_dims.size, 
+                                  self.num_boids, len(Boids.Attr))
         max_vel, max_acc = self.max_vel, self.max_acc
         state = np.zeros([dims, n_boids, n_attrs], dtype="float")
 
-        for idx, env_dim in zip(range(dims), self.env_bounds):
-            state[idx, :, Boids.Attr.LOC] = np.random.randint(low=0, high=env_dim,
+        upper = self.origin + self.env_dims//2
+        lower = self.origin - self.env_dims//2
+        for idx, (high, low) in enumerate(zip(upper, lower)):
+            state[idx, :, Boids.Attr.LOC] = np.random.randint(low=low, high=high,
                                                               size=n_boids)
         state[:, :, Boids.Attr.VEL] = np.random.uniform(low=-max_vel, high=max_vel,
                                                         size=(dims, n_boids))
@@ -124,7 +129,7 @@ class Boids:
                 of dims, num_boids.
         """
         return np.transpose(self.state[:, :, Boids.Attr.VEL])
-    
+
     def _perceive(self) -> np.ndarray:
         """Returns a tensor storing the mutual influences between boids. 
         
@@ -261,8 +266,11 @@ class Boids:
 
     def _update_loc(self):
         """Update the boids' location by their velocity"""
+        lower = np.expand_dims(self.origin - self.env_dims//2, -1)
         self.state[:, :, Boids.Attr.LOC] += self.state[:, :, Boids.Attr.VEL]
-        self.state[:, :, Boids.Attr.LOC] %= np.expand_dims(self.env_bounds, axis=1)
+        self.state[:, :, Boids.Attr.LOC] -= lower
+        self.state[:, :, Boids.Attr.LOC] %= np.expand_dims(self.env_dims, axis=1)
+        self.state[:, :, Boids.Attr.LOC] += lower
     
     def _update_acc_by_rules(self, mut_influence: np.ndarray):
         """Updates the boids' accelerations by all of its behavioral rules.

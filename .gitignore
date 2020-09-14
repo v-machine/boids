@@ -82,7 +82,7 @@ profile_default/
 ipython_config.py
 
 # Vim
-[._]*.sw[a-p]
+*.swp
 Session.vim
 
 # pyenv

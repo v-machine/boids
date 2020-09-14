@@ -1,4 +1,4 @@
-from typing import List, Tuple, Callable
+from typing import List, Tuple, Dict, Callable
 from boids.boids import Boids
 import tkinter, numpy as np, math
 
@@ -7,16 +7,15 @@ class Model:
 
     Model of the MVC architecture. Initiate model objects here.
     """
-    def __init__(self, environ_bounds: List[int]):
-        self.boids = Boids(dims=3, num_boids=200, 
-                           environ_bounds=environ_bounds,
+    def __init__(self, center: List[int], environ_bounds: List[int]):
+        self.center = center
+        self.boids = Boids(num_boids=200, environ_bounds=environ_bounds,
                            max_velocity=2, max_acceleration=1,
-                           perceptual_range=100)
-        self.center = np.asarray(environ_bounds)//2
+                           perceptual_range=100, origin=center)
         self.cube = Cube(self.center, size=max(environ_bounds))
 
     def get_center(self) -> np.ndarray:
-        return self.center
+        return np.asarray(self.center)
 
 class Cube:
     """Creates Reference Cube in the 3d simulated environment
@@ -31,14 +30,14 @@ class Cube:
          [ 1,  1,  1],
          [-1,  1,  1]])
 
-    def __init__(self, center: Tuple[int, int, int]=(0, 0, 0),
+    def __init__(self, model_center: List[int],
                  size: int=1) -> None:
-        self.center = np.asarray(center)
+        self.center = np.asarray(model_center)
         self.size = size
         self.vertices = self._make_vertices()
 
     def get_vertices(self):
-        return self.vertices
+        return self.vertices.copy()
 
     def _make_vertices(self) -> np.ndarray:
         """Returns all points in a cube as a matrix"""
@@ -57,131 +56,161 @@ class View:
         drawables: List[View.DrawableInterface]
             A list of drawables 
     """
-    def __init__(self, canvas: tkinter.Canvas, model: Model):
+    def __init__(self, canvas, model):
         self.canvas = canvas
         self.model = model
-        self.drawables: List[View.DrawableInterface] = []
-        self._create_drawables()
-        self.rotate3d = Rotate3D(self.model.get_center())
-
+        self.center = model.get_center()
+        self.basis = np.identity(self.center.size)
+        self.drawables = self._create_drawables()
+    
     def _create_drawables(self):
-        self.drawables.append(View.DrawBoids(self.model.boids),
-                              View.DrawCube(self.model.cube))
+        return [DrawCube(self, self.model.cube),
+                DrawBoids(self, self.model.boids)]
+    
+    def get_center(self):
+        return self.center.copy()
+
+    def project(self, vectors) -> np.ndarray:
+        return View.Util.project(vectors, self.basis, self.center)
+
+    def rotate_bais(self, axis: int, angle: int):
+        self.basis = View.Util.rotate3d(self.basis, np.zeros(3),
+                                        axis, angle)
 
     def redraw_all(self):
-        """Clear view and redraw all view objects
-        """
         self.canvas.delete(tkinter.ALL)
         for d in self.drawables:
-            d.draw(self.canvas)
+            d.draw_wrapper(self.canvas)
 
-    def repeat(self, timestep: int, time_stepped_func: Callable):
-        """Repeatly calls time_stepped_func at every time step
-
-        Params:
-            timestep:
-                The size of timestep of the annimation
-            time_stepped_func:
-                The function to be called at each time step
-        """
+    def repeat(self, timestep, time_stepped_func):
         self.canvas.after(timestep, time_stepped_func)
 
-    class DrawableInterface:
-        """Defines the Drwable interface. 
-
-        Attributes:
-            ref_to_model_data:
-                Reference to pertinent model data to be drawn
+    class Util:
+        """Stores utility functions for view
         """
-        def __init__(self, ref_to_model_data: object):
-            self.data = ref_to_model_data
-
-        def draw(self, canvas: tkinter.Canvas):
-            """Draws the drawable object
+        @staticmethod
+        def project(vectors, basis, center) -> np.ndarray:
+            """Projects vectors to the given basis and center
             """
-            raise NotImplementedError
+            return np.dot((vectors-center), basis) + center
 
-    class DrawBoids(DrawableInterface):
-        """Draws the boid in the gui
+        @staticmethod
+        def rotate3d(vectors: np.ndarray, center: np.ndarray,
+                   axis: int, angle: int) -> np.ndarray:
+            """Rotates a vector around a given center, axis, and degree"""
+            rotmats = [View.Util._rotmat_yz,
+                       View.Util._rotmat_xz,
+                       View.Util._rotmat_xy]
+            a = math.radians(angle+angle)
+            rotmat = rotmats[axis](math.sin(a), math.cos(a))
+            return np.dot((vectors-center), rotmat) - center
+        
+        @staticmethod
+        def _rotmat_xy(sin: float, cos: float) -> np.ndarray:
+            return np.asarray(
+                [[cos, -sin, 0],
+                 [sin,  cos, 0],
+                 [  0,    0, 1]])
+        
+        @staticmethod
+        def _rotmat_xz(sin: float, cos: float) -> np.ndarray:
+            return np.asarray(
+                [[ cos, 0, sin],
+                 [   0, 1,   0],
+                 [-sin, 0, cos]])
+        
+        @staticmethod
+        def _rotmat_yz(sin: float, cos: float) -> np.ndarray:
+            return np.asarray(
+                [[1,   0,    0],
+                 [0, cos, -sin],
+                 [0, sin,  cos]])
+
+class DrawableInterface:
+    """Defines the Drwable interface. 
+
+    Attributes:
+        ref_to_model_data:
+            Reference to pertinent model data to be drawn
+    """
+    def __init__(self, view: View, model):
+        self.view = view
+        self.model = model
+        self.data = self.get_data()
+
+    def get_data(self) -> Dict[str, np.ndarray]: 
+        """Returns the data to be drawn from model object
         """
-        def __init__(self, boids: Boids):
-            self.boids = boids
+        raise NotImplementedError
 
-        def draw(self, canvas: tkinter.Canvas):
-            self. draw_circle_boids(canvas)
+    def draw(self, canvas: tkinter.Canvas):
+        """Draws the drawable object
+        """
+        raise NotImplementedError
 
-        def draw_circle_boids(self, canvas: tkinter.Canvas):
-            size = 40
-            length = 4
-            color = 'yellow'
-            locations = self.boids.get_locations()[:, :2]
-            velocities = self.boids.get_velocities()[:, :2]
-            for loc, vel in zip(locations, velocities):
-                x0, y0 = tuple(loc)
-                x1, y1 = tuple(loc + vel * length)
-                x2, y2 = tuple(loc - size // 2)
-                x3, y3 = tuple(loc + size // 2)
-                canvas.create_oval(x2, y2, x3, y3, fill=color)
-                canvas.create_line(x0, y0, x1, y1)
+    def draw_wrapper(self, canvas: tkinter.Canvas):
+        self.data = self.get_data()
+        for item in self.data:
+            self.data[item] = self.view.project(self.data[item])
+        self.draw(canvas)
+
+class DrawCube(DrawableInterface):
+    """Draws the cube in the gui 
+    """
+    def __init__(self, view: View, cube: Cube):
+        super().__init__(view=view, model=cube)
+
+    def get_data(self) -> Dict[str, np.ndarray]:
+        return {"vertices": self.model.get_vertices()}
+
+    def draw(self, canvas):
+        width = 5
+        color = "white"
+        verts = self.data["vertices"]
+        n = len(verts)//2
+        for i in range(n):
+            x1, y1 = tuple(verts[i][:-1])
+            x2, y2 = tuple(verts[(i+1) % n][:-1])
+            x3, y3 = tuple(verts[i+n][:-1])
+            x4, y4 = tuple(verts[(i+1) % n + n][:-1])
+            for points in ((x1, y1, x2, y2),
+                           (x3, y3, x4, y4),
+                           (x1, y1, x3, y3)):
+                canvas.create_line(*points, width=width, fill=color)
+
+class DrawBoids(DrawableInterface):
+    """Draws the boid in the gui
+    """
+    def __init__(self, view: View, boids: Boids):
+        super().__init__(view=view, model=boids)
+        
+    def get_data(self) -> Dict[str, np.ndarray]:
+        data = {"locations": self.model.get_locations(),
+                "velocities": self.model.get_velocities()}
+        # self._center_in_view(data)
+        return data
+
+    def _center_in_view(self, data: Dict[str, np.ndarray]):
+        move = self.view.get_center() - self.model.get_env_bounds()//2
+        for item in data:
+            data[item] += move
     
-    class DrawCube:
-        """Draws the cube in the gui 
-        """
-        def __init__(self, cube: Cube):
-            self.cube = cube
-
-        def draw(self, canvas):
-            width = 1
-            color = "white"
-            verts = self.data.get_vertices()
-            n = len(verts)//2
-            for i in range(n):
-                x1, y1 = tuple(verts[i][:-1])
-                x2, y2 = tuple(verts[(i+1) % n][:-1])
-                x3, y3 = tuple(verts[i+n][:-1])
-                x4, y4 = tuple(verts[(i+1) % n + n][:-1])
-                for points in ((x1, y1, x2, y2),
-                               (x3, y3, x4, y4),
-                               (x1, y1, x3, y3)):
-                    canvas.create_line(*points, width=width, fill=color)
-
-    class Rotate3D:
-        """Performs 3D rotation of gui objects
-        """
-        def __init__(self, center: np.ndarray):
-            self.theta = 0
-            self.center = center
-            self.axis = 0
-
-        def rotate_3D_points(self, vertices: np.ndarray) -> np.ndarray:
-            """Rotates a matrix of points around self.center 
-            along a given axis by self.theta degree"""
-            rotmats = [View.Rotate3D._rotmat_yz,
-                       View.Rotate3D._rotmat_xz,
-                       View.Rotate3D._rotmat_xy]
-            vertices -= self.center
-            a = math.radians(self.theta)
-            rotmat = rotmats[self.axis](self, math.sin(a), math.cos(a))
-            vertices = np.dot(vertices, rotmat)
-            vertices += self.center
-        
-        def _rotmat_xy(self, sin: float, cos: float) -> np.ndarray:
-            return np.asarray(
-                [[ cos, sin, 0],
-                 [-sin, cos, 0],
-                 [   0,   0, 1]])
-        
-        def _rotmat_xz(self, sin: float, cos: float) -> np.ndarray:
-            return np.asarray(
-                [[cos, 0, -sin],
-                 [  0, 1,    0],
-                 [sin, 0,  cos]])
-
-        def _rotmat_yz(self, sin: float, cos: float) -> np.ndarray:
-            return np.asarray(
-                [[1,    0,   0],
-                 [0,  cos, sin],
-                 [0, -sin, cos]])
+    def draw(self, canvas: tkinter.Canvas):
+        self.draw_circle_boids(canvas)
+     
+    def draw_circle_boids(self, canvas: tkinter.Canvas):
+        size = 40
+        length = 4
+        color = 'yellow'
+        locations = self.data["locations"][:, :2]
+        velocities = self.data["velocities"][:, :2]
+        for loc, vel in zip(locations, velocities):
+            x0, y0 = tuple(loc)
+            x1, y1 = tuple(loc + vel * length)
+            x2, y2 = tuple(loc - size // 2)
+            x3, y3 = tuple(loc + size // 2)
+            canvas.create_oval(x2, y2, x3, y3, fill=color)
+            # canvas.create_line(x0, y0, x1, y1)
 
 class Controller:
     """Defines the controller of the annimation.
@@ -216,17 +245,27 @@ class Controller:
         """Binds event to triggering functions
         """
         self.root.bind('<Button-1>', lambda event: self._mouse_pressed_wrapper(event))
+        self.root.bind('<Key>', lambda event: self._key_pressed_wrapper(event))
 
-    def key_pressed(self, event: tkinter.Event):
+    def key_pressed(self, event):
         """Defines key-press actions
 
         Params:
             event:
                 tkinter event object
         """
-        pass
+        degree = 1
+        key_to_args = {
+            "Up": (0, degree),
+            "Down": (0, -degree),
+            "Left": (1, degree),
+            "Right": (1, -degree),
+            "comma": (2, degree),
+            "period": (2, -degree)}
+        if event.keysym in key_to_args:
+            self.view.rotate_bais(*key_to_args[event.keysym])
 
-    def mouse_pressed(self, event: tkinter.Event):
+    def mouse_pressed(self, event):
         """Defines mouse-press actions
 
         Params:
@@ -244,6 +283,10 @@ class Controller:
         self.mouse_pressed(event)
         self.view.redraw_all()
 
+    def _key_pressed_wrapper(self, event: tkinter.Event):
+        self.key_pressed(event)
+        self.view.redraw_all()
+    
     def _time_stepped_wrapper(self):
         self.time_stepped()
         self.view.redraw_all()
@@ -255,7 +298,8 @@ def main(width=1800, height=1800):
     canvas = tkinter.Canvas(root, width=width, height=height, bd=0,
                             highlightthickness=0)
     canvas.pack()
-    model = Model(width, height)
+    model = Model(center=[width//2, height//2, height//2],
+                  environ_bounds=[1000, 1000, 1000])
     view = View(canvas, model)
     controller = Controller(root, view, model)
     controller.set_timestep(10)
