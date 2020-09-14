@@ -11,7 +11,7 @@ class Model:
         self.center = center
         self.boids = Boids(num_boids=200, environ_bounds=environ_bounds,
                            max_velocity=2, max_acceleration=1,
-                           perceptual_range=100, origin=center)
+                           perceptual_range=200, origin=center)
         self.cube = Cube(self.center, size=max(environ_bounds))
 
     def get_center(self) -> np.ndarray:
@@ -164,7 +164,7 @@ class DrawCube(DrawableInterface):
         return {"vertices": self.model.get_vertices()}
 
     def draw(self, canvas):
-        width = 5
+        width = 4
         color = "white"
         verts = self.data["vertices"]
         n = len(verts)//2
@@ -176,41 +176,50 @@ class DrawCube(DrawableInterface):
             for points in ((x1, y1, x2, y2),
                            (x3, y3, x4, y4),
                            (x1, y1, x3, y3)):
-                canvas.create_line(*points, width=width, fill=color)
+                canvas.create_line(*points, width=width, 
+                                   fill=color, dash=(8, 8))
 
 class DrawBoids(DrawableInterface):
     """Draws the boid in the gui
     """
     def __init__(self, view: View, boids: Boids):
+        self.size = 40
+        self.length = 20
         super().__init__(view=view, model=boids)
         
     def get_data(self) -> Dict[str, np.ndarray]:
         data = {"locations": self.model.get_locations(),
-                "velocities": self.model.get_velocities()}
-        # self._center_in_view(data)
+                "velocities": self.model.get_locations()+
+                self.length*self.model.get_velocities()}
         return data
 
-    def _center_in_view(self, data: Dict[str, np.ndarray]):
-        move = self.view.get_center() - self.model.get_env_bounds()//2
-        for item in data:
-            data[item] += move
-    
     def draw(self, canvas: tkinter.Canvas):
         self.draw_circle_boids(canvas)
      
     def draw_circle_boids(self, canvas: tkinter.Canvas):
-        size = 40
-        length = 4
         color = 'yellow'
-        locations = self.data["locations"][:, :2]
-        velocities = self.data["velocities"][:, :2]
+        locations = self.data["locations"]
+        velocities = self.data["velocities"]
         for loc, vel in zip(locations, velocities):
-            x0, y0 = tuple(loc)
-            x1, y1 = tuple(loc + vel * length)
+            x0, y0 = tuple(loc[:-1])
+            x1, y1 = tuple(vel[:-1])
+            x2, y2 = tuple((loc - self.size//2)[:-1])
+            x3, y3 = tuple((loc + self.size//2)[:-1])
+            canvas.create_oval(x2, y2, x3, y3, fill=color)
+            canvas.create_line(x0, y0, x1, y1)
+    
+    def draw_triangle_boids(self, canvas: tkinter.Canvas):
+        size = 40
+        color = 'yellow'
+        locations = self.data["locations"]
+        velocities = self.data["velocities"]
+        for loc, vel in zip(locations, velocities):
+            x0, y0 = tuple(loc[:2])
+            x1, y1 = tuple((loc + vel)[:2])
             x2, y2 = tuple(loc - size // 2)
             x3, y3 = tuple(loc + size // 2)
             canvas.create_oval(x2, y2, x3, y3, fill=color)
-            # canvas.create_line(x0, y0, x1, y1)
+            canvas.create_line(x0, y0, x1, y1)
 
 class Controller:
     """Defines the controller of the annimation.

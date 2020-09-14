@@ -70,9 +70,9 @@ class Boids:
         self.max_acc = max_acceleration
         self.p_range = perceptual_range
         self.loc_diff = None
-        self.rules = {Boids.align: 0.0,
-                      Boids.separate: 1.0,
-                      Boids.cohere: 0.0}
+        self.rules = {Boids.align: 0.3,
+                      Boids.separate: 0.2,
+                      Boids.cohere: 0.5}
         self.origin = (self.env_dims//2 if origin is None 
                        else np.asarray(origin))
         self.state = self._init_boids_state()
@@ -219,7 +219,6 @@ class Boids:
             The mut_influence tensor should be generated using the lower bound
             of the proxim_bounds.
         """
-        loc = self.state[:, :, Boids.Attr.LOC]
         scaled_pos_diff = self.loc_diff / (self.distance + EPSILON)
         return np.einsum("ijk, jk -> ij", scaled_pos_diff, mut_influence)
         
