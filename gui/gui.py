@@ -11,7 +11,7 @@ class Model:
         self.center = center
         self.boids = Boids(num_boids=200, environ_bounds=environ_bounds,
                            max_velocity=2, max_acceleration=1,
-                           perceptual_range=200, origin=center)
+                           perceptual_range=100, origin=center)
         self.cube = Cube(self.center, size=max(environ_bounds))
 
     def get_center(self) -> np.ndarray:
@@ -71,11 +71,12 @@ class View:
         return self.center.copy()
 
     def project(self, vectors) -> np.ndarray:
-        return View.Util.project(vectors, self.basis, self.center)
+        return View.Util.project(vectors, self.basis, self.center,
+                                 self.center, distance=3000,
+                                 focal_length=2000)
 
-    def rotate_bais(self, axis: int, angle: int):
-        self.basis = View.Util.rotate3d(self.basis, np.zeros(3),
-                                        axis, angle)
+    def rotate_basis(self, axis: int, angle: int):
+        self.basis = View.Util.rotate_basis_3d(self.basis, axis, angle)
 
     def redraw_all(self):
         self.canvas.delete(tkinter.ALL)
@@ -86,25 +87,56 @@ class View:
         self.canvas.after(timestep, time_stepped_func)
 
     class Util:
-        """Stores utility functions for view
+        """Stores utility functions for view 
         """
         @staticmethod
-        def project(vectors, basis, center) -> np.ndarray:
+        def project(vectors, basis, rot_center, camera_loc, 
+                    distance, focal_length) -> np.ndarray:
             """Projects vectors to the given basis and center
             """
-            return np.dot((vectors-center), basis) + center
+            rotated = View.Util.rotate(vectors, basis, rot_center)
+            # return View.Util._perspective_project(rotated, basis, camera_loc, 
+                                                  # distance, focal_length)
+            return View.Util._orthographic_project(rotated, basis, camera_loc)
 
         @staticmethod
-        def rotate3d(vectors: np.ndarray, center: np.ndarray,
-                   axis: int, angle: int) -> np.ndarray:
-            """Rotates a vector around a given center, axis, and degree"""
+        def _orthographic_project(vectors: np.ndarray, basis: np.ndarray,
+                                  camera_loc: np.ndarray) -> np.ndarray:
+            """Project vectors in an orthographic view
+            """
+            return (np.dot((vectors-camera_loc), basis) +
+                    camera_loc)[:, :-1]
+
+        @staticmethod
+        def _perspective_project(vectors: np.ndarray, basis: np.ndarray, 
+                                 camera_loc: int, distance: int, 
+                                 focal_length: int) -> np.ndarray:
+            """Project vectors in a perspective view
+            """
+            z = focal_length / (distance - vectors[:, -1])
+            projection_mat = np.outer(z, np.asarray([1, 1, 0]))
+            return (np.multiply(vectors-camera_loc, projection_mat) + 
+                    camera_loc)[:, :-1]
+        
+        @staticmethod
+        def rotate(vectors: np.ndarray, basis: np.ndarray, 
+                   rot_center: np.ndarray) -> np.ndarray:
+            """Rotates vectors based on view basis
+            """
+            return np.dot((vectors-rot_center), basis) + rot_center
+
+        @staticmethod
+        def rotate_basis_3d(basis: np.ndarray, axis: int,
+                            angle: int) -> np.ndarray:
+            """Rotates a basis vector around a given axis and degree
+            """
             rotmats = [View.Util._rotmat_yz,
                        View.Util._rotmat_xz,
                        View.Util._rotmat_xy]
             a = math.radians(angle+angle)
             rotmat = rotmats[axis](math.sin(a), math.cos(a))
-            return np.dot((vectors-center), rotmat) - center
-        
+            return np.dot(basis, rotmat)
+
         @staticmethod
         def _rotmat_xy(sin: float, cos: float) -> np.ndarray:
             return np.asarray(
@@ -169,10 +201,10 @@ class DrawCube(DrawableInterface):
         verts = self.data["vertices"]
         n = len(verts)//2
         for i in range(n):
-            x1, y1 = tuple(verts[i][:-1])
-            x2, y2 = tuple(verts[(i+1) % n][:-1])
-            x3, y3 = tuple(verts[i+n][:-1])
-            x4, y4 = tuple(verts[(i+1) % n + n][:-1])
+            x1, y1 = tuple(verts[i])
+            x2, y2 = tuple(verts[(i+1) % n])
+            x3, y3 = tuple(verts[i+n])
+            x4, y4 = tuple(verts[(i+1) % n + n])
             for points in ((x1, y1, x2, y2),
                            (x3, y3, x4, y4),
                            (x1, y1, x3, y3)):
@@ -183,7 +215,7 @@ class DrawBoids(DrawableInterface):
     """Draws the boid in the gui
     """
     def __init__(self, view: View, boids: Boids):
-        self.size = 40
+        self.size = 20
         self.length = 20
         super().__init__(view=view, model=boids)
         
@@ -197,14 +229,14 @@ class DrawBoids(DrawableInterface):
         self.draw_circle_boids(canvas)
      
     def draw_circle_boids(self, canvas: tkinter.Canvas):
-        color = 'yellow'
+        color = 'black'
         locations = self.data["locations"]
         velocities = self.data["velocities"]
         for loc, vel in zip(locations, velocities):
-            x0, y0 = tuple(loc[:-1])
-            x1, y1 = tuple(vel[:-1])
-            x2, y2 = tuple((loc - self.size//2)[:-1])
-            x3, y3 = tuple((loc + self.size//2)[:-1])
+            x0, y0 = tuple(loc)
+            x1, y1 = tuple(vel)
+            x2, y2 = tuple((loc - self.size//2))
+            x3, y3 = tuple((loc + self.size//2))
             canvas.create_oval(x2, y2, x3, y3, fill=color)
             canvas.create_line(x0, y0, x1, y1)
     
@@ -214,8 +246,8 @@ class DrawBoids(DrawableInterface):
         locations = self.data["locations"]
         velocities = self.data["velocities"]
         for loc, vel in zip(locations, velocities):
-            x0, y0 = tuple(loc[:2])
-            x1, y1 = tuple((loc + vel)[:2])
+            x0, y0 = tuple(loc)
+            x1, y1 = tuple((loc + vel))
             x2, y2 = tuple(loc - size // 2)
             x3, y3 = tuple(loc + size // 2)
             canvas.create_oval(x2, y2, x3, y3, fill=color)
@@ -263,7 +295,7 @@ class Controller:
             event:
                 tkinter event object
         """
-        degree = 1
+        degree = 0.2
         key_to_args = {
             "Up": (0, degree),
             "Down": (0, -degree),
@@ -272,7 +304,7 @@ class Controller:
             "comma": (2, degree),
             "period": (2, -degree)}
         if event.keysym in key_to_args:
-            self.view.rotate_bais(*key_to_args[event.keysym])
+            self.view.rotate_basis(*key_to_args[event.keysym])
 
     def mouse_pressed(self, event):
         """Defines mouse-press actions
@@ -281,12 +313,13 @@ class Controller:
             event:
                 tkinter event object
         """
-        self.model.boids.swarm()
+        pass
 
     def time_stepped(self):
         """Defines time based actions
         """
         self.model.boids.swarm()
+        self.auto_rotate_view()
 
     def _mouse_pressed_wrapper(self, event: tkinter.Event):
         self.mouse_pressed(event)
@@ -301,14 +334,18 @@ class Controller:
         self.view.redraw_all()
         self.view.repeat(self.timestep, self._time_stepped_wrapper)
 
+    def auto_rotate_view(self):
+        degree = 0.01
+        for axis in range(3):
+            self.view.rotate_basis(axis, degree)
 
-def main(width=1800, height=1800):
+def main(width=2000, height=2000):
     root = tkinter.Tk()
     canvas = tkinter.Canvas(root, width=width, height=height, bd=0,
                             highlightthickness=0)
     canvas.pack()
     model = Model(center=[width//2, height//2, height//2],
-                  environ_bounds=[1000, 1000, 1000])
+                  environ_bounds=[1200, 1200, 1200])
     view = View(canvas, model)
     controller = Controller(root, view, model)
     controller.set_timestep(10)
