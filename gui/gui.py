@@ -9,9 +9,9 @@ class Model:
     """
     def __init__(self, center: List[int], environ_bounds: List[int]):
         self.center = center
-        self.boids = Boids(num_boids=200, environ_bounds=environ_bounds,
+        self.boids = Boids(num_boids=500, environ_bounds=environ_bounds,
                            max_velocity=2, max_acceleration=1,
-                           perceptual_range=100, origin=center)
+                           perceptual_range=150, origin=center)
         self.cube = Cube(self.center, size=max(environ_bounds))
 
     def get_center(self) -> np.ndarray:
@@ -95,9 +95,9 @@ class View:
             """Projects vectors to the given basis and center
             """
             rotated = View.Util.rotate(vectors, basis, rot_center)
-            # return View.Util._perspective_project(rotated, basis, camera_loc, 
-                                                  # distance, focal_length)
-            return View.Util._orthographic_project(rotated, basis, camera_loc)
+            return View.Util._perspective_project(rotated, basis, camera_loc, 
+                                                  distance, focal_length)
+            # return View.Util._orthographic_project(rotated, basis, camera_loc)
 
         @staticmethod
         def _orthographic_project(vectors: np.ndarray, basis: np.ndarray,
@@ -222,7 +222,8 @@ class DrawBoids(DrawableInterface):
     def get_data(self) -> Dict[str, np.ndarray]:
         data = {"locations": self.model.get_locations(),
                 "velocities": self.model.get_locations()+
-                self.length*self.model.get_velocities()}
+                self.length*self.model.get_velocities(),
+                "radii": self.model.get_locations()+self.size}
         return data
 
     def draw(self, canvas: tkinter.Canvas):
@@ -232,26 +233,17 @@ class DrawBoids(DrawableInterface):
         color = 'black'
         locations = self.data["locations"]
         velocities = self.data["velocities"]
-        for loc, vel in zip(locations, velocities):
+        radii = self.data["radii"]-self.data["locations"]
+        for loc, vel, r in zip(locations, velocities, radii):
             x0, y0 = tuple(loc)
             x1, y1 = tuple(vel)
-            x2, y2 = tuple((loc - self.size//2))
-            x3, y3 = tuple((loc + self.size//2))
+            x2, y2 = tuple((loc - r[0]//2))
+            x3, y3 = tuple((loc + r[0]//2))
             canvas.create_oval(x2, y2, x3, y3, fill=color)
             canvas.create_line(x0, y0, x1, y1)
     
     def draw_triangle_boids(self, canvas: tkinter.Canvas):
-        size = 40
-        color = 'yellow'
-        locations = self.data["locations"]
-        velocities = self.data["velocities"]
-        for loc, vel in zip(locations, velocities):
-            x0, y0 = tuple(loc)
-            x1, y1 = tuple((loc + vel))
-            x2, y2 = tuple(loc - size // 2)
-            x3, y3 = tuple(loc + size // 2)
-            canvas.create_oval(x2, y2, x3, y3, fill=color)
-            canvas.create_line(x0, y0, x1, y1)
+        pass
 
 class Controller:
     """Defines the controller of the annimation.

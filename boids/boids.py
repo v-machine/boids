@@ -70,9 +70,9 @@ class Boids:
         self.max_acc = max_acceleration
         self.p_range = perceptual_range
         self.loc_diff = None
-        self.rules = {Boids.align: 0,
-                      Boids.separate: 1,
-                      Boids.cohere: 0}
+        self.rules = {Boids.align: 0.2,
+                      Boids.separate: 0.6,
+                      Boids.cohere: 0.2}
         self.origin = (self.env_dims//2 if origin is None 
                        else np.asarray(origin))
         self.state = self._init_boids_state()
