@@ -9,7 +9,7 @@ class Model:
     """
     def __init__(self, center: List[int], environ_bounds: List[int]):
         self.center = center
-        self.boids = Boids(num_boids=500, environ_bounds=environ_bounds,
+        self.boids = Boids(num_boids=200, environ_bounds=environ_bounds,
                            max_velocity=2, max_acceleration=1,
                            perceptual_range=150, origin=center)
         self.cube = Cube(self.center, size=max(environ_bounds))
@@ -94,29 +94,28 @@ class View:
                     distance, focal_length) -> np.ndarray:
             """Projects vectors to the given basis and center
             """
-            rotated = View.Util.rotate(vectors, basis, rot_center)
-            return View.Util._perspective_project(rotated, basis, camera_loc, 
-                                                  distance, focal_length)
-            # return View.Util._orthographic_project(rotated, basis, camera_loc)
+            return View.Util.perspective_project(vectors, basis, camera_loc, 
+                                                 distance, focal_length)
+            # return View.Util.orthographic_project(vectors, basis, camera_loc)
 
         @staticmethod
-        def _orthographic_project(vectors: np.ndarray, basis: np.ndarray,
+        def orthographic_project(vectors: np.ndarray, basis: np.ndarray,
                                   camera_loc: np.ndarray) -> np.ndarray:
             """Project vectors in an orthographic view
             """
-            return (np.dot((vectors-camera_loc), basis) +
-                    camera_loc)[:, :-1]
+            return View.Util.rotate(vectors, basis, camera_loc)
 
         @staticmethod
-        def _perspective_project(vectors: np.ndarray, basis: np.ndarray, 
+        def perspective_project(vectors: np.ndarray, basis: np.ndarray, 
                                  camera_loc: int, distance: int, 
                                  focal_length: int) -> np.ndarray:
             """Project vectors in a perspective view
             """
-            z = focal_length / (distance - vectors[:, -1])
-            projection_mat = np.outer(z, np.asarray([1, 1, 0]))
-            return (np.multiply(vectors-camera_loc, projection_mat) + 
-                    camera_loc)[:, :-1]
+            rotated = View.Util.rotate(vectors, basis, camera_loc)
+            scale = focal_length / (distance - rotated[:, -1])
+            projection_mat = np.outer(scale, np.asarray([1, 1, 0]))
+            return (np.multiply(rotated-camera_loc, projection_mat) + 
+                    camera_loc)
         
         @staticmethod
         def rotate(vectors: np.ndarray, basis: np.ndarray, 
@@ -198,7 +197,7 @@ class DrawCube(DrawableInterface):
     def draw(self, canvas):
         width = 4
         color = "white"
-        verts = self.data["vertices"]
+        verts = self.data["vertices"][:, :-1]
         n = len(verts)//2
         for i in range(n):
             x1, y1 = tuple(verts[i])
@@ -230,17 +229,21 @@ class DrawBoids(DrawableInterface):
         self.draw_circle_boids(canvas)
      
     def draw_circle_boids(self, canvas: tkinter.Canvas):
-        color = 'black'
-        locations = self.data["locations"]
-        velocities = self.data["velocities"]
-        radii = self.data["radii"]-self.data["locations"]
-        for loc, vel, r in zip(locations, velocities, radii):
+        locations = self.data["locations"][:, :-1]
+        velocities = self.data["velocities"][:, :-1]
+        radii = np.linalg.norm(self.data["radii"]-self.data["locations"],
+                               axis=-1)
+        bound = self.size*2.5
+        for idx in np.argsort(radii):
+            loc, vel, r = locations[idx], velocities[idx], radii[idx]
+            c = int((1 - min(r, bound)/bound)*255)
+            rgb = "#%02x%02x%02x" % (c, c, c)
             x0, y0 = tuple(loc)
             x1, y1 = tuple(vel)
-            x2, y2 = tuple((loc - r[0]//2))
-            x3, y3 = tuple((loc + r[0]//2))
-            canvas.create_oval(x2, y2, x3, y3, fill=color)
-            canvas.create_line(x0, y0, x1, y1)
+            x2, y2 = tuple((loc - r//2))
+            x3, y3 = tuple((loc + r//2))
+            canvas.create_line(x0, y0, x1, y1, fill=rgb, width=0)
+            canvas.create_oval(x2, y2, x3, y3, fill=rgb, width=0)
     
     def draw_triangle_boids(self, canvas: tkinter.Canvas):
         pass
